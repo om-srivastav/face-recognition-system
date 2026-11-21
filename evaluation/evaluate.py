@@ -205,13 +205,26 @@ with open(OUTPUT_CSV, "w", newline="", encoding="utf-8") as file:
     ])
     writer.writerows(results)
 
-known_total = (
-    known_correct + known_rejected + known_misidentified
-)
+known_total = known_correct + known_rejected + known_misidentified
 unknown_total = unknown_correct + unknown_accepted
 evaluated_total = known_total + unknown_total
 
-correct_total = known_correct + unknown_correct
+# Binary known-vs-unknown metrics for the current single-identity gallery.
+# Wrong-identity predictions are reported separately.
+tp = known_correct
+fn = known_rejected
+fp = unknown_accepted
+tn = unknown_correct
+
+def safe_divide(numerator, denominator):
+    return numerator / denominator if denominator else 0.0
+
+accuracy = safe_divide(tp + tn, tp + tn + fp + fn)
+precision = safe_divide(tp, tp + fp)
+recall = safe_divide(tp, tp + fn)
+f1_score = safe_divide(2 * precision * recall, precision + recall)
+far = safe_divide(fp, fp + tn)
+frr = safe_divide(fn, fn + tp)
 
 print("\n========== EVALUATION SUMMARY ==========")
 print(f"Threshold: {THRESHOLD}")
@@ -219,27 +232,34 @@ print(f"Registered identities: {len(gallery)}")
 print(f"Known test images evaluated: {known_total}")
 print(f"Unknown test images evaluated: {unknown_total}")
 print(f"Images skipped: {skipped}")
+print(f"Wrong identity predictions: {known_misidentified}")
 
 if evaluated_total:
-    print(
-        f"Overall exact-decision accuracy: "
-        f"{correct_total / evaluated_total:.2%}"
-    )
+    print(f"Overall exact-decision accuracy: {safe_divide(known_correct + unknown_correct, evaluated_total):.2%}")
 else:
     print("No test images were evaluated.")
 
+print("\n========== CONFUSION MATRIX ==========")
+print("                     Predicted Known   Predicted Unknown")
+print(f"Actual Known              {tp:>5}                {fn:>5}")
+print(f"Actual Unknown            {fp:>5}                {tn:>5}")
+
+print("\n========== CLASSIFICATION METRICS ==========")
+print(f"TP: {tp} | TN: {tn} | FP: {fp} | FN: {fn}")
+print(f"Accuracy:  {accuracy:.2%}")
+print(f"Precision: {precision:.2%}")
+print(f"Recall:    {recall:.2%}")
+print(f"F1-score:  {f1_score:.2%}")
+print(f"FAR:       {far:.2%}")
+print(f"FRR:       {frr:.2%}")
+
 if known_total:
-    print(f"Known correct identification rate: "
-          f"{known_correct / known_total:.2%}")
-    print(f"Known false rejection rate: "
-          f"{known_rejected / known_total:.2%}")
-    print(f"Known wrong identity rate: "
-          f"{known_misidentified / known_total:.2%}")
+    print(f"Known correct identification rate: {safe_divide(known_correct, known_total):.2%}")
+    print(f"Known false rejection rate: {safe_divide(known_rejected, known_total):.2%}")
+    print(f"Known wrong identity rate: {safe_divide(known_misidentified, known_total):.2%}")
 
 if unknown_total:
-    print(f"Unknown correct rejection rate: "
-          f"{unknown_correct / unknown_total:.2%}")
-    print(f"Unknown false acceptance rate: "
-          f"{unknown_accepted / unknown_total:.2%}")
+    print(f"Unknown correct rejection rate: {safe_divide(unknown_correct, unknown_total):.2%}")
+    print(f"Unknown false acceptance rate: {safe_divide(unknown_accepted, unknown_total):.2%}")
 
 print(f"\nDetailed results saved to: {OUTPUT_CSV}")

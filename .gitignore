@@ -1,8 +1,21 @@
+# Python environment
 .venv/
 __pycache__/
 *.py[cod]
+
+# Environment variables and secrets
 .env
+.env.*
+*.pem
+*.key
+MAIL_KEY*.txt
+
+# Personal biometric data
 data/registered_faces/
 models/
 evaluation/test_images/
 evaluation/results.csv
+
+# Private evaluation references and backup files
+evaluation/reference_images/
+*.bak
