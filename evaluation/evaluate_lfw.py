@@ -21,7 +21,7 @@ DATASET_DIR = BASE_DIR / "evaluation" / "public_dataset" / "lfw"
 MODEL_DIR = BASE_DIR / "models"
 YUNET_PATH = MODEL_DIR / "face_detection_yunet_2023mar.onnx"
 SFACE_PATH = MODEL_DIR / "face_recognition_sface_2021dec.onnx"
-OUTPUT_DIR = BASE_DIR / "evaluation" / "lfw_results"
+DEFAULT_OUTPUT_DIR = BASE_DIR / "evaluation" / "lfw_results"
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png"}
 DEFAULT_THRESHOLD = 0.45
 THRESHOLDS = [0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60, 0.65, 0.70]
@@ -119,6 +119,7 @@ def write_csv(path, fieldnames, rows):
 
 
 def main():
+    global OUTPUT_DIR
     parser = argparse.ArgumentParser(
         description="Run a reproducible custom LFW gallery/probe experiment."
     )
@@ -127,7 +128,20 @@ def main():
     parser.add_argument("--max-probes", type=int, default=5)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--threshold", type=float, default=DEFAULT_THRESHOLD)
+    parser.add_argument("--exclude-manifest", type=Path, default=None)
+    parser.add_argument("--output-dir", type=Path, default=None)
     args = parser.parse_args()
+
+    OUTPUT_DIR = args.output_dir.resolve() if args.output_dir else DEFAULT_OUTPUT_DIR
+    excluded_identities = set()
+    if args.exclude_manifest:
+        if not args.exclude_manifest.is_file():
+            raise FileNotFoundError(f"Exclusion manifest not found: {args.exclude_manifest}")
+        with args.exclude_manifest.open("r", newline="", encoding="utf-8") as handle:
+            reader = csv.DictReader(handle)
+            if "identity" not in (reader.fieldnames or []):
+                raise ValueError("Exclusion manifest must contain an identity column.")
+            excluded_identities = {row["identity"] for row in reader if row.get("identity")}
 
     if min(args.enrolled, args.unknown, args.max_probes) < 1:
         raise SystemExit("enrolled, unknown, and max-probes must be positive.")
@@ -138,7 +152,10 @@ def main():
 
     folders = sorted(p for p in DATASET_DIR.iterdir() if p.is_dir())
     identity_images = {p.name: image_files(p) for p in folders}
-    eligible = sorted(name for name, imgs in identity_images.items() if len(imgs) >= 2)
+    eligible = sorted(
+        name for name, imgs in identity_images.items()
+        if len(imgs) >= 2 and name not in excluded_identities
+    )
     if len(eligible) < args.enrolled:
         raise RuntimeError(f"Only {len(eligible)} identities have at least 2 images.")
 
@@ -147,7 +164,7 @@ def main():
     enrolled_set = set(enrolled_names)
     unknown_eligible = sorted(
         name for name, imgs in identity_images.items()
-        if name not in enrolled_set and imgs
+        if name not in enrolled_set and name not in excluded_identities and imgs
     )
     if len(unknown_eligible) < args.unknown:
         raise RuntimeError("Not enough identities available for unknown probes.")
@@ -300,6 +317,8 @@ def main():
             "not the official LFW 6000-pair verification protocol."
         ),
         "seed": args.seed,
+        "excluded_identity_count": len(excluded_identities),
+        "exclusion_manifest": str(args.exclude_manifest) if args.exclude_manifest else None,
         "requested_enrolled_identities": args.enrolled,
         "valid_gallery_identities": len(gallery),
         "requested_unknown_identities": args.unknown,
